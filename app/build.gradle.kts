@@ -15,6 +15,12 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+        // Read API key from local.properties
+        val localProperties = com.android.build.gradle.internal.cxx.configure
+            .gradleLocalProperties(rootDir, providers)
+        manifestPlaceholders["MAPS_API_KEY"] =
+            localProperties.getProperty("MAPS_API_KEY") ?: ""
+
     }
 
     buildTypes {

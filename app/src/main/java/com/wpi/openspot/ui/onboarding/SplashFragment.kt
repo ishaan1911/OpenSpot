@@ -1,3 +1,14 @@
 package com.wpi.openspot.ui.onboarding
+
+import android.os.Bundle
+import android.view.View
 import androidx.fragment.app.Fragment
-class SplashFragment : Fragment()
+import androidx.navigation.fragment.findNavController
+import com.wpi.openspot.R
+
+class SplashFragment : Fragment(R.layout.fragment_splash) {
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        findNavController().navigate(R.id.toHome)
+    }
+}
