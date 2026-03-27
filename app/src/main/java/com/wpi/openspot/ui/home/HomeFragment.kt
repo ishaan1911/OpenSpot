@@ -1,7 +1,9 @@
 package com.wpi.openspot.ui.home
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +22,9 @@ import com.google.android.gms.maps.model.MarkerOptions
 import com.wpi.openspot.R
 import com.wpi.openspot.domain.model.LotStatus
 import com.wpi.openspot.domain.model.ParkingLot
+import com.wpi.openspot.service.GeofenceManager
+import com.wpi.openspot.service.LocationService
+import android.util.Log
 import kotlinx.coroutines.launch
 
 class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
@@ -27,20 +32,30 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
     private var googleMap: GoogleMap? = null
     private val WPI_CENTER = LatLng(42.2746, -71.8063)
     private val viewModel: HomeViewModel by viewModels()
-
-    // Track markers by lot ID so we update in place instead of clearing all
     private val markerMap = HashMap<String, Marker>()
+    private lateinit var geofenceManager: GeofenceManager
+    private var geofencesRegistered = false
 
     private val locationPermissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true) {
             enableMyLocation()
+            requestBackgroundLocationPermission()
+        }
+    }
+
+    private val backgroundLocationRequest = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            Log.d("OpenSpot", "Background location granted")
         }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        geofenceManager = GeofenceManager(requireContext())
         val mapFragment = childFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
@@ -50,20 +65,28 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
         googleMap = map
         map.moveCamera(CameraUpdateFactory.newLatLngZoom(WPI_CENTER, 16f))
 
-        // Observe Firestore lots and update markers individually
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.lots.collect { lots ->
                 updateMarkers(map, lots)
+                if (!geofencesRegistered && lots.isNotEmpty()) {
+                    geofenceManager.registerGeofences(lots)
+                    geofencesRegistered = true
+                }
             }
         }
 
-        // Request or enable location
+        checkLocationPermissions()
+    }
+
+    private fun checkLocationPermissions() {
         if (ContextCompat.checkSelfPermission(
                 requireContext(),
                 Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             enableMyLocation()
+            startLocationService()
+            requestBackgroundLocationPermission()
         } else {
             locationPermissionRequest.launch(
                 arrayOf(
@@ -74,8 +97,34 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
         }
     }
 
+    private fun requestBackgroundLocationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            backgroundLocationRequest.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }
+    }
+
+    private fun startLocationService() {
+        val intent = Intent(requireContext(), LocationService::class.java)
+        requireContext().startForegroundService(intent)
+    }
+
+    private fun enableMyLocation() {
+        val map = googleMap ?: return
+        if (ContextCompat.checkSelfPermission(
+                requireContext(),
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            map.isMyLocationEnabled = true
+        }
+    }
+
     private fun updateMarkers(map: GoogleMap, lots: List<ParkingLot>) {
-        // Remove markers for lots that no longer exist
         val incomingIds = lots.map { it.id }.toSet()
         val removedIds = markerMap.keys - incomingIds
         removedIds.forEach { id ->
@@ -83,21 +132,18 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
             markerMap.remove(id)
         }
 
-        // Add or update markers for each lot
         lots.forEach { lot ->
             val color = when (lot.status) {
                 LotStatus.AVAILABLE -> BitmapDescriptorFactory.HUE_GREEN
                 LotStatus.FULL      -> BitmapDescriptorFactory.HUE_RED
-                LotStatus.UNCERTAIN -> BitmapDescriptorFactory.HUE_YELLOW
+                LotStatus.ALMOST_FULL -> BitmapDescriptorFactory.HUE_YELLOW
                 LotStatus.UNKNOWN   -> BitmapDescriptorFactory.HUE_AZURE
             }
             val existingMarker = markerMap[lot.id]
             if (existingMarker != null) {
-                // Update existing marker color and snippet
                 existingMarker.setIcon(BitmapDescriptorFactory.defaultMarker(color))
                 existingMarker.snippet = lot.status.name
             } else {
-                // Add new marker
                 val marker = map.addMarker(
                     MarkerOptions()
                         .position(LatLng(lot.latitude, lot.longitude))
@@ -110,14 +156,8 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
         }
     }
 
-    private fun enableMyLocation() {
-        val map = googleMap ?: return
-        if (ContextCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            map.isMyLocationEnabled = true
-        }
+    override fun onDestroy() {
+        super.onDestroy()
+        geofenceManager.removeGeofences()
     }
 }

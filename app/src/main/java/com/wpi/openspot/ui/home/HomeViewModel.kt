@@ -33,7 +33,6 @@ class HomeViewModel : ViewModel() {
 
                 val lots = snapshot.documents.mapNotNull { doc ->
                     try {
-                        Log.d("OpenSpot", "Document: ${doc.id} -> ${doc.data}")
                         ParkingLot(
                             id = doc.id,
                             name = doc.getString("name") ?: "",
@@ -43,7 +42,9 @@ class HomeViewModel : ViewModel() {
                                 (doc.getString("status") ?: "UNKNOWN").trim().uppercase()
                             ),
                             permitTypes = (doc.get("permitTypes") as? List<*>)
-                                ?.filterIsInstance<String>() ?: emptyList()
+                                ?.filterIsInstance<String>() ?: emptyList(),
+                            capacity = (doc.getLong("capacity") ?: 0L).toInt(),
+                            occupancy = (doc.getLong("occupancy") ?: 0L).toInt()
                         )
                     } catch (e: Exception) {
                         Log.e("OpenSpot", "Failed to parse doc ${doc.id}: ${e.message}")
