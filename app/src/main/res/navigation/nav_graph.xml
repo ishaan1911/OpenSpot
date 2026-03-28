@@ -14,6 +14,13 @@
     <fragment
         android:id="@+id/signInFragment"
         android:name="com.wpi.openspot.ui.onboarding.SignInFragment">
+        <action android:id="@+id/toRegister" app:destination="@id/registerFragment"/>
+        <action android:id="@+id/toHome" app:destination="@id/homeFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/registerFragment"
+        android:name="com.wpi.openspot.ui.onboarding.RegisterFragment">
         <action android:id="@+id/toScanId" app:destination="@id/scanIdFragment"/>
     </fragment>
 
