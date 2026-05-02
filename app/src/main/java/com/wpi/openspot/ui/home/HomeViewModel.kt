@@ -14,9 +14,12 @@ class HomeViewModel : ViewModel() {
     private val _lots = MutableStateFlow<List<ParkingLot>>(emptyList())
     val lots: StateFlow<List<ParkingLot>> = _lots
 
+    var geofencesRegistered = false
+
     private val db = Firebase.firestore
 
     init {
+        recalculateStatuses()
         listenToLots()
     }
 
@@ -44,7 +47,9 @@ class HomeViewModel : ViewModel() {
                             permitTypes = (doc.get("permitTypes") as? List<*>)
                                 ?.filterIsInstance<String>() ?: emptyList(),
                             capacity = (doc.getLong("capacity") ?: 0L).toInt(),
-                            occupancy = (doc.getLong("occupancy") ?: 0L).toInt()
+                            occupancy = (doc.getLong("occupancy") ?: 0L).toInt(),
+                            lastUpdatedAt = doc.getTimestamp("lastUpdatedAt")
+                                ?.toDate()?.time ?: 0L
                         )
                     } catch (e: Exception) {
                         Log.e("OpenSpot", "Failed to parse doc ${doc.id}: ${e.message}")
@@ -53,6 +58,26 @@ class HomeViewModel : ViewModel() {
                 }
                 Log.d("OpenSpot", "Parsed ${lots.size} lots, emitting to StateFlow")
                 _lots.value = lots
+            }
+    }
+
+    fun recalculateStatuses() {
+        db.collection("lots").get()
+            .addOnSuccessListener { snapshot ->
+                snapshot.documents.forEach { doc ->
+                    val capacity = (doc.getLong("capacity") ?: 50L).toInt()
+                    val occupancy = (doc.getLong("occupancy") ?: 0L).toInt()
+                    val correctStatus = when {
+                        occupancy >= capacity -> "FULL"
+                        occupancy >= (capacity * 0.85).toInt() -> "ALMOST_FULL"
+                        else -> "AVAILABLE"
+                    }
+                    val currentStatus = doc.getString("status") ?: "AVAILABLE"
+                    if (currentStatus != correctStatus) {
+                        doc.reference.update("status", correctStatus)
+                        Log.d("OpenSpot", "Corrected ${doc.id}: $currentStatus -> $correctStatus")
+                    }
+                }
             }
     }
 }

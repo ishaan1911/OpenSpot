@@ -34,8 +34,19 @@ class RegisterFragment : Fragment(R.layout.fragment_register) {
             val password = etPassword.text.toString().trim()
             val confirmPassword = etConfirmPassword.text.toString().trim()
 
+            // Basic field validation
             if (email.isEmpty() || password.isEmpty() || confirmPassword.isEmpty()) {
                 Toast.makeText(requireContext(), "Please fill in all fields", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // WPI email validation — only @wpi.edu accepted
+            if (!email.lowercase().endsWith("@wpi.edu")) {
+                Toast.makeText(
+                    requireContext(),
+                    "Only WPI email addresses (@wpi.edu) are accepted",
+                    Toast.LENGTH_LONG
+                ).show()
                 return@setOnClickListener
             }
 
@@ -53,15 +64,23 @@ class RegisterFragment : Fragment(R.layout.fragment_register) {
             btnRegister.isEnabled = false
 
             auth.createUserWithEmailAndPassword(email, password)
-                .addOnSuccessListener {
-                    Log.d("OpenSpot", "Registration successful")
+                .addOnSuccessListener { result ->
+                    Log.d("OpenSpot", "Registration successful — UID: ${result.user?.uid}")
                     progressBar.visibility = View.GONE
+                    // Navigate to ScanId — user is now fully authenticated
                     findNavController().navigate(R.id.toScanId)
                 }
                 .addOnFailureListener { e ->
                     progressBar.visibility = View.GONE
                     btnRegister.isEnabled = true
-                    Toast.makeText(requireContext(), "Registration failed: ${e.message}", Toast.LENGTH_LONG).show()
+                    val msg = when {
+                        e.message?.contains("email address is already") == true ->
+                            "An account with this email already exists. Please sign in."
+                        e.message?.contains("email address is badly") == true ->
+                            "Please enter a valid email address."
+                        else -> "Registration failed: ${e.message}"
+                    }
+                    Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
                 }
         }
 

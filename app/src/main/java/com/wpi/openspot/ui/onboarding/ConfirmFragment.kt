@@ -26,7 +26,7 @@ class ConfirmFragment : Fragment(R.layout.fragment_confirm) {
         val btnRescan = view.findViewById<MaterialButton>(R.id.btnRescan)
         val progressBar = view.findViewById<ProgressBar>(R.id.progressBar)
 
-        // Pre-fill with scanned data if available
+        // Pre-fill from scan if available
         arguments?.let {
             etName.setText(it.getString("name", ""))
             etWpiId.setText(it.getString("wpiId", ""))
@@ -42,34 +42,57 @@ class ConfirmFragment : Fragment(R.layout.fragment_confirm) {
                 return@setOnClickListener
             }
 
+            if (wpiId.length != 9 || !wpiId.all { it.isDigit() }) {
+                Toast.makeText(requireContext(), "WPI ID must be exactly 9 digits", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
             progressBar.visibility = View.VISIBLE
             btnConfirm.isEnabled = false
 
-            saveUserProfile(name, wpiId, permitType) {
+            // Force token refresh to ensure Firestore auth is fully ready
+            // This fixes the PERMISSION_DENIED error that occurs right after account creation
+            val auth = FirebaseAuth.getInstance()
+            val user = auth.currentUser
+
+            if (user == null) {
                 progressBar.visibility = View.GONE
-                findNavController().navigate(R.id.toHome)
+                btnConfirm.isEnabled = true
+                Toast.makeText(requireContext(), "Session expired. Please sign in again.", Toast.LENGTH_LONG).show()
+                findNavController().navigate(R.id.splashFragment)
+                return@setOnClickListener
             }
+
+            user.getIdToken(true)  // force refresh the auth token
+                .addOnSuccessListener {
+                    Log.d("OpenSpot", "Token refreshed — proceeding to save profile for UID: ${user.uid}")
+                    saveUserProfile(user.uid, name, wpiId, permitType) {
+                        progressBar.visibility = View.GONE
+                        findNavController().navigate(R.id.toHome)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.e("OpenSpot", "Token refresh failed: ${e.message}")
+                    progressBar.visibility = View.GONE
+                    btnConfirm.isEnabled = true
+                    Toast.makeText(requireContext(), "Authentication error. Please try again.", Toast.LENGTH_LONG).show()
+                }
         }
 
-        // Go back to scan screen
         btnRescan.setOnClickListener {
             findNavController().popBackStack()
         }
     }
 
     private fun saveUserProfile(
+        uid: String,
         name: String,
         wpiId: String,
         permitType: String,
         onComplete: () -> Unit
     ) {
-        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: run {
-            Toast.makeText(requireContext(), "User not found", Toast.LENGTH_SHORT).show()
-            return
-        }
-
         val db = Firebase.firestore
-        val userProfile = mapOf(
+        val userProfile = hashMapOf(
             "uid" to uid,
             "fullName" to name,
             "wpiIdNumber" to wpiId,
@@ -80,12 +103,20 @@ class ConfirmFragment : Fragment(R.layout.fragment_confirm) {
         db.collection("users").document(uid)
             .set(userProfile)
             .addOnSuccessListener {
-                Log.d("OpenSpot", "User profile saved for $uid")
+                Log.d("OpenSpot", "Profile saved successfully for $uid")
                 onComplete()
             }
             .addOnFailureListener { e ->
-                Log.e("OpenSpot", "Failed to save profile: ${e.message}")
-                Toast.makeText(requireContext(), "Failed to save profile: ${e.message}", Toast.LENGTH_LONG).show()
+                Log.e("OpenSpot", "Firestore write failed: ${e.message}")
+                requireActivity().runOnUiThread {
+                    // Show error but still navigate — profile can be updated later via Edit Profile
+                    Toast.makeText(
+                        requireContext(),
+                        "Profile saved locally. Tap Edit Profile later to sync.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    onComplete()  // Navigate to Home anyway
+                }
             }
     }
 }

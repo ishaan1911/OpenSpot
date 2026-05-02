@@ -50,6 +50,12 @@
 
     <fragment
         android:id="@+id/profileFragment"
-        android:name="com.wpi.openspot.ui.profile.ProfileFragment"/>
+        android:name="com.wpi.openspot.ui.profile.ProfileFragment">
+        <action android:id="@+id/toEditProfile" app:destination="@id/editProfileFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/editProfileFragment"
+        android:name="com.wpi.openspot.ui.profile.EditProfileFragment"/>
 
 </navigation>

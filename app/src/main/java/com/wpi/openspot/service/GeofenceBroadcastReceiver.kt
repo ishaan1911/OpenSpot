@@ -25,17 +25,16 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         val transitionType = geofencingEvent.geofenceTransition
         val triggeringGeofences = geofencingEvent.triggeringGeofences ?: return
 
+        // No speed filter — trigger on any entry or exit
         triggeringGeofences.forEach { geofence ->
             val lotId = geofence.requestId
-            Log.d("OpenSpot", "Geofence event: $lotId transition: $transitionType")
-
             when (transitionType) {
                 Geofence.GEOFENCE_TRANSITION_ENTER -> {
-                    Log.d("OpenSpot", "Vehicle entered lot: $lotId")
+                    Log.d("OpenSpot", "Entered lot: $lotId")
                     handleEntry(lotId)
                 }
                 Geofence.GEOFENCE_TRANSITION_EXIT -> {
-                    Log.d("OpenSpot", "Vehicle exited lot: $lotId")
+                    Log.d("OpenSpot", "Exited lot: $lotId")
                     handleExit(lotId)
                 }
             }
@@ -46,7 +45,6 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         val db = Firebase.firestore
         val lotRef = db.collection("lots").document(lotId)
 
-        // Atomic transaction — read capacity, increment occupancy, derive status
         db.runTransaction { transaction ->
             val snapshot = transaction.get(lotRef)
             val capacity = (snapshot.getLong("capacity") ?: 50L).toInt()
@@ -55,7 +53,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
             val newStatus = when {
                 newOccupancy >= capacity -> "FULL"
-                newOccupancy >= capacity * 0.85 -> "ALMOST_FULL"
+                newOccupancy >= (capacity * 0.85).toInt() -> "ALMOST_FULL"
                 else -> "AVAILABLE"
             }
 
@@ -65,7 +63,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 "lastUpdatedAt" to FieldValue.serverTimestamp()
             ))
 
-            Log.d("OpenSpot", "$lotId — Entry: occupancy $currentOccupancy -> $newOccupancy / $capacity → $newStatus")
+            Log.d("OpenSpot", "$lotId entry: $currentOccupancy → $newOccupancy / $capacity → $newStatus")
         }.addOnSuccessListener {
             Log.d("OpenSpot", "Entry transaction successful for $lotId")
         }.addOnFailureListener { e ->
@@ -81,12 +79,11 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             val snapshot = transaction.get(lotRef)
             val capacity = (snapshot.getLong("capacity") ?: 50L).toInt()
             val currentOccupancy = (snapshot.getLong("occupancy") ?: 0L).toInt()
-            // Never go below 0
             val newOccupancy = maxOf(0, currentOccupancy - 1)
 
             val newStatus = when {
                 newOccupancy >= capacity -> "FULL"
-                newOccupancy >= capacity * 0.85 -> "ALMOST_FULL"
+                newOccupancy >= (capacity * 0.85).toInt() -> "ALMOST_FULL"
                 else -> "AVAILABLE"
             }
 
@@ -96,7 +93,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 "lastUpdatedAt" to FieldValue.serverTimestamp()
             ))
 
-            Log.d("OpenSpot", "$lotId — Exit: occupancy $currentOccupancy -> $newOccupancy / $capacity → $newStatus")
+            Log.d("OpenSpot", "$lotId exit: $currentOccupancy → $newOccupancy / $capacity → $newStatus")
         }.addOnSuccessListener {
             Log.d("OpenSpot", "Exit transaction successful for $lotId")
         }.addOnFailureListener { e ->

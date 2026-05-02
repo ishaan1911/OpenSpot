@@ -74,6 +74,18 @@
         android:layout_marginTop="16dp"/>
 
     <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnEditProfile"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:text="Edit Profile"
+        android:textSize="16sp"
+        android:backgroundTint="#1565C0"
+        app:layout_constraintBottom_toTopOf="@id/btnSignOut"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginBottom="12dp"/>
+
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSignOut"
         android:layout_width="match_parent"
         android:layout_height="56dp"

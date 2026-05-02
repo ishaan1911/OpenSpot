@@ -16,8 +16,7 @@ import com.wpi.openspot.domain.model.ParkingLot
 class GeofenceManager(private val context: Context) {
 
     companion object {
-        const val GEOFENCE_RADIUS_METERS = 100f
-        const val GEOFENCE_EXPIRATION = Geofence.NEVER_EXPIRE
+        const val GEOFENCE_RADIUS_METERS = 50f
         const val ACTION_GEOFENCE_EVENT = "com.wpi.openspot.GEOFENCE_EVENT"
     }
 
@@ -29,53 +28,54 @@ class GeofenceManager(private val context: Context) {
             action = ACTION_GEOFENCE_EVENT
         }
         PendingIntent.getBroadcast(
-            context,
-            0,
-            intent,
+            context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         )
     }
 
     fun registerGeofences(lots: List<ParkingLot>) {
         if (ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_FINE_LOCATION
+                context, Manifest.permission.ACCESS_FINE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            Log.e("OpenSpot", "Location permission not granted, skipping geofence registration")
+            Log.e("OpenSpot", "Location permission not granted — skipping geofence registration")
             return
         }
 
-        val geofences = lots.map { lot ->
-            Geofence.Builder()
-                .setRequestId(lot.id)
-                .setCircularRegion(lot.latitude, lot.longitude, GEOFENCE_RADIUS_METERS)
-                .setExpirationDuration(GEOFENCE_EXPIRATION)
-                .setTransitionTypes(
-                    Geofence.GEOFENCE_TRANSITION_ENTER or
-                    Geofence.GEOFENCE_TRANSITION_EXIT
-                )
-                .build()
-        }
+        // Remove any existing geofences first to avoid stale registrations
+        geofencingClient.removeGeofences(geofencePendingIntent)
+            .addOnCompleteListener {
+                val geofences = lots.map { lot ->
+                    Log.d("OpenSpot", "Registering geofence for lot ID: '${lot.id}' at ${lot.latitude}, ${lot.longitude}")
+                    Geofence.Builder()
+                        .setRequestId(lot.id)
+                        .setCircularRegion(lot.latitude, lot.longitude, GEOFENCE_RADIUS_METERS)
+                        .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                        .setTransitionTypes(
+                            Geofence.GEOFENCE_TRANSITION_ENTER or
+                            Geofence.GEOFENCE_TRANSITION_EXIT
+                        )
+                        .setNotificationResponsiveness(2000) // fire within 2 seconds
+                        .build()
+                }
 
-        val request = GeofencingRequest.Builder()
-            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-            .addGeofences(geofences)
-            .build()
+                val request = GeofencingRequest.Builder()
+                    .setInitialTrigger(0) // don't fire on registration — only on actual crossing
+                    .addGeofences(geofences)
+                    .build()
 
-        geofencingClient.addGeofences(request, geofencePendingIntent)
-            .addOnSuccessListener {
-                Log.d("OpenSpot", "Geofences registered: ${lots.size} lots")
-            }
-            .addOnFailureListener { e ->
-                Log.e("OpenSpot", "Failed to register geofences: ${e.message}")
+                geofencingClient.addGeofences(request, geofencePendingIntent)
+                    .addOnSuccessListener {
+                        Log.d("OpenSpot", "Geofences registered successfully: ${lots.map { it.id }}")
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("OpenSpot", "Failed to register geofences: ${e.message}")
+                    }
             }
     }
 
     fun removeGeofences() {
         geofencingClient.removeGeofences(geofencePendingIntent)
-            .addOnSuccessListener {
-                Log.d("OpenSpot", "Geofences removed")
-            }
+            .addOnSuccessListener { Log.d("OpenSpot", "Geofences removed") }
     }
 }

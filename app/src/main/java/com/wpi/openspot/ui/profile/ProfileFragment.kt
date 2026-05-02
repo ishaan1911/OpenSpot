@@ -21,6 +21,7 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
         val tvWpiId = view.findViewById<TextView>(R.id.tvWpiId)
         val tvPermitType = view.findViewById<TextView>(R.id.tvPermitType)
         val tvReportCount = view.findViewById<TextView>(R.id.tvReportCount)
+        val btnEditProfile = view.findViewById<MaterialButton>(R.id.btnEditProfile)
         val btnSignOut = view.findViewById<MaterialButton>(R.id.btnSignOut)
 
         val auth = FirebaseAuth.getInstance()
@@ -28,7 +29,6 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
 
         tvEmail.text = "Email: ${user?.email ?: "—"}"
 
-        // Load profile from Firestore
         user?.uid?.let { uid ->
             Firebase.firestore.collection("users").document(uid)
                 .get()
@@ -40,9 +40,32 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 }
         }
 
+        btnEditProfile.setOnClickListener {
+            findNavController().navigate(R.id.toEditProfile)
+        }
+
         btnSignOut.setOnClickListener {
             auth.signOut()
             findNavController().navigate(R.id.splashFragment)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reload profile data when returning from EditProfile
+        val user = FirebaseAuth.getInstance().currentUser ?: return
+        val tvName = view?.findViewById<TextView>(R.id.tvName) ?: return
+        val tvWpiId = view?.findViewById<TextView>(R.id.tvWpiId) ?: return
+        val tvPermitType = view?.findViewById<TextView>(R.id.tvPermitType) ?: return
+        val tvReportCount = view?.findViewById<TextView>(R.id.tvReportCount) ?: return
+
+        Firebase.firestore.collection("users").document(user.uid)
+            .get()
+            .addOnSuccessListener { doc ->
+                tvName.text = "Name: ${doc.getString("fullName") ?: "—"}"
+                tvWpiId.text = "WPI ID: ${doc.getString("wpiIdNumber") ?: "—"}"
+                tvPermitType.text = "Permit Type: ${doc.getString("permitType") ?: "—"}"
+                tvReportCount.text = "Reports: ${doc.getLong("reportCount") ?: 0}"
+            }
     }
 }

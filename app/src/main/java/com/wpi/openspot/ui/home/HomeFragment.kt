@@ -11,7 +11,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
@@ -35,7 +37,6 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
     private val markerMap = HashMap<String, Marker>()
     private val lotDataMap = HashMap<String, ParkingLot>()
     private lateinit var geofenceManager: GeofenceManager
-    private var geofencesRegistered = false
 
     private val locationPermissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -55,6 +56,7 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         geofenceManager = GeofenceManager(requireContext())
+
         val mapFragment = childFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
@@ -64,7 +66,6 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
         googleMap = map
         map.moveCamera(CameraUpdateFactory.newLatLngZoom(WPI_CENTER, 16f))
 
-        // Tap marker → show bottom sheet
         map.setOnMarkerClickListener { marker ->
             val lotId = marker.tag as? String ?: return@setOnMarkerClickListener false
             val lot = lotDataMap[lotId] ?: return@setOnMarkerClickListener false
@@ -73,13 +74,21 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
             true
         }
 
+        // repeatOnLifecycle ensures collection RESTARTS when app comes back to foreground
+        // This is the fix for real-time updates not showing without restart
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.lots.collect { lots ->
-                lots.forEach { lotDataMap[it.id] = it }
-                updateMarkers(map, lots)
-                if (!geofencesRegistered && lots.isNotEmpty()) {
-                    geofenceManager.registerGeofences(lots)
-                    geofencesRegistered = true
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.lots.collect { lots ->
+                    Log.d("OpenSpot", "UI received ${lots.size} lots — updating markers")
+                    lots.forEach { lotDataMap[it.id] = it }
+                    updateMarkers(map, lots)
+
+                    // Register geofences only once — flag lives in ViewModel
+                    if (!viewModel.geofencesRegistered && lots.isNotEmpty()) {
+                        geofenceManager.registerGeofences(lots)
+                        viewModel.geofencesRegistered = true
+                        Log.d("OpenSpot", "Geofences registered for ${lots.size} lots")
+                    }
                 }
             }
         }
@@ -95,8 +104,7 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
 
     private fun checkLocationPermissions() {
         if (ContextCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION
+                requireContext(), Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             enableMyLocation()
@@ -115,8 +123,7 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
     private fun requestBackgroundLocationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                requireContext(), Manifest.permission.ACCESS_BACKGROUND_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             backgroundLocationRequest.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
@@ -124,15 +131,15 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
     }
 
     private fun startLocationService() {
-        val intent = Intent(requireContext(), LocationService::class.java)
-        requireContext().startForegroundService(intent)
+        requireContext().startForegroundService(
+            Intent(requireContext(), LocationService::class.java)
+        )
     }
 
     private fun enableMyLocation() {
         val map = googleMap ?: return
         if (ContextCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.ACCESS_FINE_LOCATION
+                requireContext(), Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             map.isMyLocationEnabled = true
@@ -142,10 +149,7 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
     private fun updateMarkers(map: GoogleMap, lots: List<ParkingLot>) {
         val incomingIds = lots.map { it.id }.toSet()
         val removedIds = markerMap.keys - incomingIds
-        removedIds.forEach { id ->
-            markerMap[id]?.remove()
-            markerMap.remove(id)
-        }
+        removedIds.forEach { id -> markerMap[id]?.remove(); markerMap.remove(id) }
 
         lots.forEach { lot ->
             val color = when (lot.status) {
@@ -154,10 +158,10 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
                 LotStatus.ALMOST_FULL -> BitmapDescriptorFactory.HUE_YELLOW
                 LotStatus.UNKNOWN     -> BitmapDescriptorFactory.HUE_AZURE
             }
-            val existingMarker = markerMap[lot.id]
-            if (existingMarker != null) {
-                existingMarker.setIcon(BitmapDescriptorFactory.defaultMarker(color))
-                existingMarker.snippet = lot.status.name
+            val existing = markerMap[lot.id]
+            if (existing != null) {
+                existing.setIcon(BitmapDescriptorFactory.defaultMarker(color))
+                existing.snippet = lot.status.name
             } else {
                 val marker = map.addMarker(
                     MarkerOptions()

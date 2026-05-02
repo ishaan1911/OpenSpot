@@ -5,7 +5,6 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 import android.view.View
-import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,9 +28,7 @@ import java.util.concurrent.Executors
 class ScanIdFragment : Fragment(R.layout.fragment_scan_id) {
 
     private lateinit var cameraExecutor: ExecutorService
-    private var scanningEnabled = true
-    private var scannedName = ""
-    private var scannedId = ""
+    private var scanningEnabled = true  // reset each time fragment is created
 
     private val cameraPermissionRequest = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -42,12 +39,20 @@ class ScanIdFragment : Fragment(R.layout.fragment_scan_id) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        cameraExecutor = Executors.newSingleThreadExecutor()
 
+        cameraExecutor = Executors.newSingleThreadExecutor()
+        scanningEnabled = true  // always reset on view creation so rescan works
+
+        val tvInstruction = view.findViewById<TextView>(R.id.tvInstruction)
         val btnManualEntry = view.findViewById<MaterialButton>(R.id.btnManualEntry)
 
+        // Check if this is a rescan (came back from Confirm)
+        val isRescan = arguments?.getBoolean("isRescan", false) ?: false
+        if (isRescan) {
+            tvInstruction.text = "Scan again — point camera at your WPI ID card"
+        }
+
         btnManualEntry.setOnClickListener {
-            // Navigate to confirm with empty fields for manual entry
             val bundle = Bundle().apply {
                 putString("name", "")
                 putString("wpiId", "")
@@ -56,8 +61,7 @@ class ScanIdFragment : Fragment(R.layout.fragment_scan_id) {
         }
 
         if (ContextCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.CAMERA
+                requireContext(), Manifest.permission.CAMERA
             ) == PackageManager.PERMISSION_GRANTED
         ) {
             startCamera()
@@ -70,7 +74,6 @@ class ScanIdFragment : Fragment(R.layout.fragment_scan_id) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
-
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(
                     requireView().findViewById<PreviewView>(R.id.previewView).surfaceProvider
@@ -102,19 +105,13 @@ class ScanIdFragment : Fragment(R.layout.fragment_scan_id) {
             } catch (e: Exception) {
                 Log.e("OpenSpot", "Camera binding failed: ${e.message}")
             }
-
         }, ContextCompat.getMainExecutor(requireContext()))
     }
 
     private fun handleScanResult(name: String, wpiId: String) {
-        scannedName = name
-        scannedId = wpiId
-
         val tvScannedText = requireView().findViewById<TextView>(R.id.tvScannedText)
         tvScannedText.visibility = View.VISIBLE
         tvScannedText.text = "Detected:\nName: $name\nWPI ID: $wpiId\n\nNavigating to confirm..."
-
-        Log.d("OpenSpot", "Scanned — Name: $name, WPI ID: $wpiId")
 
         requireView().postDelayed({
             val bundle = Bundle().apply {
@@ -137,53 +134,36 @@ class WpiIdAnalyzer(private val onResult: (name: String, wpiId: String) -> Unit)
 
     @androidx.camera.core.ExperimentalGetImage
     override fun analyze(imageProxy: ImageProxy) {
-        val mediaImage = imageProxy.image ?: run {
-            imageProxy.close()
-            return
-        }
-
+        val mediaImage = imageProxy.image ?: run { imageProxy.close(); return }
         val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
 
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
                 val fullText = visionText.text
-                Log.d("OpenSpot", "MLKit scanned text: $fullText")
-
-                // Extract name and WPI ID from scanned text
+                Log.d("OpenSpot", "MLKit scanned: $fullText")
                 val name = extractName(fullText)
                 val wpiId = extractWpiId(fullText)
-
                 if (name.isNotEmpty() && wpiId.isNotEmpty()) {
                     onResult(name, wpiId)
                 }
             }
-            .addOnFailureListener { e ->
-                Log.e("OpenSpot", "MLKit error: ${e.message}")
-            }
-            .addOnCompleteListener {
-                imageProxy.close()
-            }
+            .addOnFailureListener { e -> Log.e("OpenSpot", "MLKit error: ${e.message}") }
+            .addOnCompleteListener { imageProxy.close() }
     }
 
     private fun extractName(text: String): String {
-        // WPI ID cards have name on a line — look for lines with common name patterns
         val lines = text.lines()
         for (line in lines) {
             val trimmed = line.trim()
-            // Name lines typically have 2-4 words, all letters
             if (trimmed.split(" ").size in 2..4 &&
                 trimmed.all { it.isLetter() || it.isWhitespace() } &&
                 trimmed.length > 4
-            ) {
-                return trimmed
-            }
+            ) return trimmed
         }
         return ""
     }
 
     private fun extractWpiId(text: String): String {
-        // WPI IDs are 9-digit numbers
-        val pattern = Regex("\\b\\d{9}\\b")
-        return pattern.find(text)?.value ?: ""
+        return Regex("\\b\\d{9}\\b").find(text)?.value ?: ""
     }
 }
