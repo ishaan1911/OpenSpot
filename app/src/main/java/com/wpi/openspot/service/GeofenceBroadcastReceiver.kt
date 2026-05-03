@@ -14,42 +14,61 @@ import com.google.firebase.ktx.Firebase
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        val geofencingEvent = GeofencingEvent.fromIntent(intent) ?: return
+        Log.d("OpenSpot", "GeofenceBroadcastReceiver fired")
+
+        val geofencingEvent = GeofencingEvent.fromIntent(intent)
+        if (geofencingEvent == null) {
+            Log.e("OpenSpot", "GeofencingEvent is null")
+            return
+        }
 
         if (geofencingEvent.hasError()) {
-            val errorMessage = GeofenceStatusCodes.getStatusCodeString(geofencingEvent.errorCode)
-            Log.e("OpenSpot", "Geofence error: $errorMessage")
+            val msg = GeofenceStatusCodes.getStatusCodeString(geofencingEvent.errorCode)
+            Log.e("OpenSpot", "Geofence error: $msg")
             return
         }
 
         val transitionType = geofencingEvent.geofenceTransition
-        val triggeringGeofences = geofencingEvent.triggeringGeofences ?: return
+        val triggeringGeofences = geofencingEvent.triggeringGeofences
 
-        // No speed filter — trigger on any entry or exit
+        if (triggeringGeofences.isNullOrEmpty()) {
+            Log.e("OpenSpot", "No triggering geofences")
+            return
+        }
+
+        Log.d("OpenSpot", "Transition: $transitionType lots: ${triggeringGeofences.map { it.requestId }}")
+
         triggeringGeofences.forEach { geofence ->
             val lotId = geofence.requestId
             when (transitionType) {
                 Geofence.GEOFENCE_TRANSITION_ENTER -> {
-                    Log.d("OpenSpot", "Entered lot: $lotId")
-                    handleEntry(lotId)
+                    Log.d("OpenSpot", "ENTER: $lotId — incrementing")
+                    updateOccupancy(lotId, increment = true)
                 }
                 Geofence.GEOFENCE_TRANSITION_EXIT -> {
-                    Log.d("OpenSpot", "Exited lot: $lotId")
-                    handleExit(lotId)
+                    Log.d("OpenSpot", "EXIT: $lotId — decrementing")
+                    updateOccupancy(lotId, increment = false)
                 }
+                else -> Log.d("OpenSpot", "Unknown transition: $transitionType")
             }
         }
     }
 
-    private fun handleEntry(lotId: String) {
+    private fun updateOccupancy(lotId: String, increment: Boolean) {
         val db = Firebase.firestore
         val lotRef = db.collection("lots").document(lotId)
 
         db.runTransaction { transaction ->
             val snapshot = transaction.get(lotRef)
+
+            if (!snapshot.exists()) {
+                Log.e("OpenSpot", "Lot $lotId does not exist in Firestore")
+                return@runTransaction
+            }
+
             val capacity = (snapshot.getLong("capacity") ?: 50L).toInt()
-            val currentOccupancy = (snapshot.getLong("occupancy") ?: 0L).toInt()
-            val newOccupancy = currentOccupancy + 1
+            val current = (snapshot.getLong("occupancy") ?: 0L).toInt()
+            val newOccupancy = if (increment) current + 1 else maxOf(0, current - 1)
 
             val newStatus = when {
                 newOccupancy >= capacity -> "FULL"
@@ -63,41 +82,13 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 "lastUpdatedAt" to FieldValue.serverTimestamp()
             ))
 
-            Log.d("OpenSpot", "$lotId entry: $currentOccupancy → $newOccupancy / $capacity → $newStatus")
-        }.addOnSuccessListener {
-            Log.d("OpenSpot", "Entry transaction successful for $lotId")
-        }.addOnFailureListener { e ->
-            Log.e("OpenSpot", "Entry transaction failed for $lotId: ${e.message}")
+            Log.d("OpenSpot", "$lotId: $current → $newOccupancy / $capacity ($newStatus)")
         }
-    }
-
-    private fun handleExit(lotId: String) {
-        val db = Firebase.firestore
-        val lotRef = db.collection("lots").document(lotId)
-
-        db.runTransaction { transaction ->
-            val snapshot = transaction.get(lotRef)
-            val capacity = (snapshot.getLong("capacity") ?: 50L).toInt()
-            val currentOccupancy = (snapshot.getLong("occupancy") ?: 0L).toInt()
-            val newOccupancy = maxOf(0, currentOccupancy - 1)
-
-            val newStatus = when {
-                newOccupancy >= capacity -> "FULL"
-                newOccupancy >= (capacity * 0.85).toInt() -> "ALMOST_FULL"
-                else -> "AVAILABLE"
-            }
-
-            transaction.update(lotRef, mapOf(
-                "occupancy" to newOccupancy,
-                "status" to newStatus,
-                "lastUpdatedAt" to FieldValue.serverTimestamp()
-            ))
-
-            Log.d("OpenSpot", "$lotId exit: $currentOccupancy → $newOccupancy / $capacity → $newStatus")
-        }.addOnSuccessListener {
-            Log.d("OpenSpot", "Exit transaction successful for $lotId")
-        }.addOnFailureListener { e ->
-            Log.e("OpenSpot", "Exit transaction failed for $lotId: ${e.message}")
+        .addOnSuccessListener {
+            Log.d("OpenSpot", "Transaction success: $lotId")
+        }
+        .addOnFailureListener { e ->
+            Log.e("OpenSpot", "Transaction failed: $lotId — ${e.message}")
         }
     }
 }

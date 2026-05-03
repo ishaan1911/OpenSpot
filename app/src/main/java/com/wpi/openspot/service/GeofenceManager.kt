@@ -38,15 +38,14 @@ class GeofenceManager(private val context: Context) {
                 context, Manifest.permission.ACCESS_FINE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            Log.e("OpenSpot", "Location permission not granted — skipping geofence registration")
+            Log.e("OpenSpot", "Location permission not granted")
             return
         }
 
-        // Remove any existing geofences first to avoid stale registrations
         geofencingClient.removeGeofences(geofencePendingIntent)
             .addOnCompleteListener {
                 val geofences = lots.map { lot ->
-                    Log.d("OpenSpot", "Registering geofence for lot ID: '${lot.id}' at ${lot.latitude}, ${lot.longitude}")
+                    Log.d("OpenSpot", "Building geofence — id='${lot.id}' lat=${lot.latitude} lng=${lot.longitude}")
                     Geofence.Builder()
                         .setRequestId(lot.id)
                         .setCircularRegion(lot.latitude, lot.longitude, GEOFENCE_RADIUS_METERS)
@@ -55,21 +54,21 @@ class GeofenceManager(private val context: Context) {
                             Geofence.GEOFENCE_TRANSITION_ENTER or
                             Geofence.GEOFENCE_TRANSITION_EXIT
                         )
-                        .setNotificationResponsiveness(2000) // fire within 2 seconds
+                        .setNotificationResponsiveness(2000)
                         .build()
                 }
 
                 val request = GeofencingRequest.Builder()
-                    .setInitialTrigger(0) // don't fire on registration — only on actual crossing
+                    .setInitialTrigger(0) // never fire on registration — only on actual crossing
                     .addGeofences(geofences)
                     .build()
 
                 geofencingClient.addGeofences(request, geofencePendingIntent)
                     .addOnSuccessListener {
-                        Log.d("OpenSpot", "Geofences registered successfully: ${lots.map { it.id }}")
+                        Log.d("OpenSpot", "Geofences registered: ${lots.map { it.id }}")
                     }
                     .addOnFailureListener { e ->
-                        Log.e("OpenSpot", "Failed to register geofences: ${e.message}")
+                        Log.e("OpenSpot", "Geofence registration failed: ${e.message}")
                     }
             }
     }

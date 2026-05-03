@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -33,7 +34,7 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
 
     private var googleMap: GoogleMap? = null
     private val WPI_CENTER = LatLng(42.2746, -71.8063)
-    private val viewModel: HomeViewModel by viewModels()
+    private val viewModel: HomeViewModel by activityViewModels()
     private val markerMap = HashMap<String, Marker>()
     private val lotDataMap = HashMap<String, ParkingLot>()
     private lateinit var geofenceManager: GeofenceManager
@@ -50,13 +51,12 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
     private val backgroundLocationRequest = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) Log.d("OpenSpot", "Background location granted")
+        Log.d("OpenSpot", "Background location granted: $granted")
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         geofenceManager = GeofenceManager(requireContext())
-
         val mapFragment = childFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
@@ -74,20 +74,19 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
             true
         }
 
-        // repeatOnLifecycle ensures collection RESTARTS when app comes back to foreground
-        // This is the fix for real-time updates not showing without restart
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.lots.collect { lots ->
-                    Log.d("OpenSpot", "UI received ${lots.size} lots — updating markers")
+                    if (lots.isEmpty()) return@collect
                     lots.forEach { lotDataMap[it.id] = it }
                     updateMarkers(map, lots)
 
                     // Register geofences only once — flag lives in ViewModel
-                    if (!viewModel.geofencesRegistered && lots.isNotEmpty()) {
-                        geofenceManager.registerGeofences(lots)
+                    // which survives fragment recreation
+                    if (!viewModel.geofencesRegistered) {
                         viewModel.geofencesRegistered = true
-                        Log.d("OpenSpot", "Geofences registered for ${lots.size} lots")
+                        geofenceManager.registerGeofences(lots)
+                        Log.d("OpenSpot", "Geofences registered once for ${lots.size} lots")
                     }
                 }
             }
@@ -137,12 +136,11 @@ class HomeFragment : Fragment(R.layout.fragment_home), OnMapReadyCallback {
     }
 
     private fun enableMyLocation() {
-        val map = googleMap ?: return
         if (ContextCompat.checkSelfPermission(
                 requireContext(), Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
         ) {
-            map.isMyLocationEnabled = true
+            googleMap?.isMyLocationEnabled = true
         }
     }
 

@@ -27,12 +27,10 @@ class HomeViewModel : ViewModel() {
         db.collection("lots")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e("OpenSpot", "Firestore error: ${error.message}")
+                    Log.e("OpenSpot", "Firestore listen error: ${error.message}")
                     return@addSnapshotListener
                 }
                 if (snapshot == null) return@addSnapshotListener
-
-                Log.d("OpenSpot", "Snapshot received: ${snapshot.documents.size} documents")
 
                 val lots = snapshot.documents.mapNotNull { doc ->
                     try {
@@ -52,11 +50,11 @@ class HomeViewModel : ViewModel() {
                                 ?.toDate()?.time ?: 0L
                         )
                     } catch (e: Exception) {
-                        Log.e("OpenSpot", "Failed to parse doc ${doc.id}: ${e.message}")
+                        Log.e("OpenSpot", "Parse error for ${doc.id}: ${e.message}")
                         null
                     }
                 }
-                Log.d("OpenSpot", "Parsed ${lots.size} lots, emitting to StateFlow")
+                Log.d("OpenSpot", "Firestore update: ${lots.size} lots")
                 _lots.value = lots
             }
     }
@@ -75,7 +73,7 @@ class HomeViewModel : ViewModel() {
                     val currentStatus = doc.getString("status") ?: "AVAILABLE"
                     if (currentStatus != correctStatus) {
                         doc.reference.update("status", correctStatus)
-                        Log.d("OpenSpot", "Corrected ${doc.id}: $currentStatus -> $correctStatus")
+                        Log.d("OpenSpot", "Corrected ${doc.id}: $currentStatus → $correctStatus")
                     }
                 }
             }
