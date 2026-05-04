@@ -1,4 +1,4 @@
-# OpenSpot — Parking & Campus Navigation for WPI
+# OpenSpot - Parking & Campus Navigation for WPI
 **CS 528: Mobile & Ubiquitous Computing | Worcester Polytechnic Institute | Spring 2026**
 
 **Team:** Glenn D'souza | Ishaan Parekh | Shreelaxmi Malawade
@@ -8,7 +8,7 @@
 ## Folder Structure
 
 ```
-D_souza_Parekh_Malawade_final_project/
+Dsouza_Parekh_Malawade_final_project/
 ├── slides/         — Final presentation slides (.pptx)
 ├── video/          — Demo video of the app in action
 ├── paper/          — Final project paper (.docx)
@@ -259,4 +259,4 @@ Firebase Backend (Firestore + Firebase Auth)
 
 ---
 
-*CS 528 Mobile & Ubiquitous Computing — Worcester Polytechnic Institute — Spring 2026*
+*CS 528 Mobile & Ubiquitous Computing - Worcester Polytechnic Institute - Spring 2026*
