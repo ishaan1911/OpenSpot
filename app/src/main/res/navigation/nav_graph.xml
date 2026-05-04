@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/splashFragment">
+
+    <fragment
+        android:id="@+id/splashFragment"
+        android:name="com.wpi.openspot.ui.onboarding.SplashFragment">
+        <action android:id="@+id/toSignIn" app:destination="@id/signInFragment"/>
+        <action android:id="@+id/toHome" app:destination="@id/homeFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/signInFragment"
+        android:name="com.wpi.openspot.ui.onboarding.SignInFragment">
+        <action android:id="@+id/toRegister" app:destination="@id/registerFragment"/>
+        <action android:id="@+id/toHome" app:destination="@id/homeFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/registerFragment"
+        android:name="com.wpi.openspot.ui.onboarding.RegisterFragment">
+        <action android:id="@+id/toScanId" app:destination="@id/scanIdFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/scanIdFragment"
+        android:name="com.wpi.openspot.ui.onboarding.ScanIdFragment">
+        <action android:id="@+id/toConfirm" app:destination="@id/confirmFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/confirmFragment"
+        android:name="com.wpi.openspot.ui.onboarding.ConfirmFragment">
+        <action android:id="@+id/toHome" app:destination="@id/homeFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.wpi.openspot.ui.home.HomeFragment"/>
+
+    <fragment
+        android:id="@+id/lotsFragment"
+        android:name="com.wpi.openspot.ui.lots.LotsFragment"/>
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.wpi.openspot.ui.settings.SettingsFragment"/>
+
+    <fragment
+        android:id="@+id/profileFragment"
+        android:name="com.wpi.openspot.ui.profile.ProfileFragment">
+        <action android:id="@+id/toEditProfile" app:destination="@id/editProfileFragment"/>
+    </fragment>
+
+    <fragment
+        android:id="@+id/editProfileFragment"
+        android:name="com.wpi.openspot.ui.profile.EditProfileFragment"/>
+
+</navigation>
